@@ -1,0 +1,3 @@
+pyyaml
+pytest
+mini-swe-agent>=2.4

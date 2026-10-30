@@ -4,8 +4,8 @@ Benchmark for measuring **specification drift** in long-horizon LLM coding agent
 does an agent still respect the explicit constraints it was given at turn 1
 after N successive requests?
 
-> Status: early pilot. Task `t01_invlite` and the checkers are complete and validated;
-> the agent runner (mini-SWE-agent) is the next step.
+> Status: early pilot. Task `t01_invlite`, the checkers, the metric and the agent
+> runner (mini-SWE-agent) are complete and tested; first model runs are next.
 
 ## Design in one paragraph
 
@@ -28,6 +28,8 @@ constraint fidelity are measured separately.
 ```
 specdrift/checkers.py      deterministic checkers (C1 API, C2 deps, C3 scope, C4 py3.9, C5 errors)
 specdrift/metrics.py       per-turn scoring, F(t), CLI
+specdrift/runner.py        multi-turn sessions with mini-SWE-agent, 3 conditions, Williams ordering
+notebooks/kaggle_pilot.ipynb   free pilot on Kaggle GPUs (vLLM + open-weight model)
 tasks/t01_invlite/
     repo/                  starting repository given to the agent (with AGENTS.md)
     task.yaml              constraints, 10 requests, opportunities
@@ -37,11 +39,34 @@ tests/                     unit tests of checkers and metric
 validation/check_temptations.py   naive shortcuts pass functional tests but are caught
 ```
 
+## Running an agent
+
+```bash
+pip install -r requirements.txt
+python -m specdrift.runner --task tasks/t01_invlite \
+    --model hosted_vllm/Qwen/Qwen2.5-Coder-14B-Instruct-AWQ --api-base http://localhost:8000/v1 \
+    --condition continuous --order-row 0 --out runs/
+```
+
+- `--condition`: `continuous` (rules at turn 1 only), `recall` (rules repeated every turn),
+  `fresh` (new conversation every turn, same repository state).
+- `--order-row`: row of a Williams balanced Latin square, so each request appears at each
+  position across rows.
+- Each session writes `results.json` (per-turn F, introduced violations, functional
+  success, model calls), the trajectories, and a snapshot of the repository after each turn.
+- The agent's commands run directly in a copy of the task repository: use a disposable
+  machine. `notebooks/kaggle_pilot.ipynb` runs everything on Kaggle's free 2×T4 GPUs with vLLM.
+
+Why a local model for the pilot: in a continuous session every call resends the whole
+history, so a 10-turn session easily needs over a million input tokens. Free API tiers
+seen in October 2026 (e.g. 8,000 tokens per minute and 200,000 per day on Groq's free plan)
+cannot sustain that.
+
 ## Reproduce the validation
 
 ```bash
 pip install pytest pyyaml
-python -m pytest -q                         # 31 checker/metric tests
+python -m pytest -q                         # 36 tests (checkers, metric, runner end-to-end with a scripted model)
 python validation/check_temptations.py      # 5 tempting shortcuts, each caught by the intended checker
 cd tasks/t01_invlite && PYTHONPATH=reference:hidden_tests python -m pytest -q hidden_tests reference/tests
 ```

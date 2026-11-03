@@ -47,7 +47,9 @@ You will receive a sequence of change requests from the maintainers, one at a ti
 
 ## How to work
 
-1. Read the relevant files, make the change, and check it (for example with `python -m pytest -q tests`).
+1. Read the relevant files (`cat path`), make the change, and check it (for example with `python -m pytest -q tests`).
+   To change a file, rewrite it completely with a heredoc (`cat > path <<'EOF'` ... `EOF`) instead of
+   multi-line `sed` edits, which easily corrupt Python files.
 2. When the request is done, submit with exactly this command, on its own:
    `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`
 3. Every response must contain exactly ONE command in a ```mswea_bash_command block.
@@ -146,16 +148,19 @@ def make_agent(model, workdir: Path, step_limit: int, cmd_timeout: int):
     )
 
 
-def make_model(model_name: str, temperature: float, api_base: str = "", max_tokens: int = 2048,
+def make_model(model_name: str, temperature: float, api_base: str = "", max_tokens: int = 2048, api_key: str = "",
                model_class: str = "litellm_textbased"):
     """`api_base` points LiteLLM to a local OpenAI-compatible server (e.g. vLLM on Kaggle):
     use model names like `hosted_vllm/Qwen/Qwen2.5-Coder-14B-Instruct-AWQ`."""
     from minisweagent.models import get_model
 
     obs = _base_agent_config()["model"]
-    kwargs = {"temperature": temperature, "drop_params": True, "max_tokens": max_tokens}
+    # timeout: a local server shared by several sessions can take minutes per call
+    kwargs = {"temperature": temperature, "drop_params": True, "max_tokens": max_tokens, "timeout": 1800}
     if api_base:
         kwargs["api_base"] = api_base
+    if api_key:
+        kwargs["api_key"] = api_key
     return get_model(model_name, {
         "model_class": model_class,
         "model_kwargs": kwargs,
@@ -274,6 +279,12 @@ def run_session(
         rec.update({k: v for k, v in meta.items() if k not in ("turn", "request")})
     scored["condition"] = condition
     scored["final_regression"] = final
+    # Fidelity only means something on turns where the request was actually done:
+    # an agent that changes nothing trivially "respects" every constraint.
+    done_f = [t["F"] for t in scored["turns"] if t.get("functional_pass") and t["F"] is not None]
+    scored["summary"]["mean_F_on_successful_turns"] = round(sum(done_f) / len(done_f), 4) if done_f else None
+    scored["summary"]["n_successful_turns_with_opportunity"] = len(done_f)
+    scored["summary"]["turns_with_broken_files"] = sum(1 for t in scored["turns"] if t["broken_files"])
     scored["summary"]["functional_success_rate"] = (
         round(sum(m["functional_pass"] for m in turns_meta) / len(turns_meta), 4) if turns_meta else None
     )
@@ -290,7 +301,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--order-row", type=int, default=0, help="row of the Williams design (0..n-1)")
     ap.add_argument("--seed", type=int, default=0, help="repetition index, only used in the output path")
     ap.add_argument("--temperature", type=float, default=0.0)
-    ap.add_argument("--api-base", default="", help="URL of a local OpenAI-compatible server, e.g. http://localhost:8000/v1")
+    ap.add_argument("--api-base", default="", help="URL of an OpenAI-compatible server, e.g. http://localhost:8000/v1")
+    ap.add_argument("--api-key-env", default="", help="name of the environment variable holding the server's API key")
+    ap.add_argument("--max-tokens", type=int, default=4096, help="max tokens per model reply")
     ap.add_argument("--step-limit", type=int, default=30, help="max model calls per turn")
     ap.add_argument("--n-turns", type=int, default=0, help="run only the first N requests (0 = all)")
     ap.add_argument("--out", type=Path, default=Path("runs"))
@@ -304,7 +317,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     safe_model = a.model.replace("/", "__")
     out = a.out / task["id"] / safe_model / a.condition / f"row{a.order_row:02d}_seed{a.seed}"
     print(f"session -> {out}\norder: {', '.join(order)}")
-    res = run_session(a.task, out, lambda: make_model(a.model, a.temperature, a.api_base), a.condition, order, a.step_limit)
+    res = run_session(a.task, out, lambda: make_model(a.model, a.temperature, a.api_base, a.max_tokens,
+                                                         os.environ.get(a.api_key_env, "") if a.api_key_env else ""), a.condition, order, a.step_limit)
     print(json.dumps(res["summary"], indent=2))
     return 0
 

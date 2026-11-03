@@ -16,7 +16,7 @@ from typing import Dict, List, Optional, Sequence
 
 import yaml
 
-from specdrift.checkers import CHECKERS, run_all
+from specdrift.checkers import CHECKERS, broken_files, run_all
 
 
 def load_task(task_dir: Path) -> dict:
@@ -59,6 +59,7 @@ def score_session(task_dir: Path, order: Sequence[str], snapshots: Sequence[Path
             "spontaneous_violations": sorted(violated - opps),
             "F": None if o == 0 else round(1 - ov / o, 4),
             "active_findings": sum(len(v) for v in now.values()),
+            "broken_files": sorted(broken_files(Path(snap))),
         })
         prev = now
     defined = [r["F"] for r in turns if r["F"] is not None]

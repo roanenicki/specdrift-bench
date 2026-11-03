@@ -196,3 +196,14 @@ def test_errors_bare_reraise_ok(repo):
 def test_errors_systemexit_ok():
     # cli.py already contains `raise SystemExit(main())` and the baseline is clean.
     assert check_errors(BASE, BASE) == set()
+
+
+# ----------------------------------------------------------- broken files
+def test_broken_file_is_not_a_constraint_violation(repo):
+    from specdrift.checkers import broken_files
+
+    append(repo, "invlite/store.py", "def broken(:\n    pass")
+    assert broken_files(repo) == {"invlite/store.py"}
+    # neither C1 (API "removed") nor C4 (py39 syntax) may fire on a file that does not parse at all
+    assert check_api(repo, BASE) == set()
+    assert check_py39(repo, BASE) == set()

@@ -29,7 +29,8 @@ constraint fidelity are measured separately.
 specdrift/checkers.py      deterministic checkers (C1 API, C2 deps, C3 scope, C4 py3.9, C5 errors)
 specdrift/metrics.py       per-turn scoring, F(t), CLI
 specdrift/runner.py        multi-turn sessions with mini-SWE-agent, 3 conditions, Williams ordering
-notebooks/kaggle_pilot.ipynb   free pilot on Kaggle GPUs (vLLM + open-weight model)
+notebooks/kaggle_pilot.ipynb   pilot on Kaggle 2xT4 GPUs (vLLM + Qwen2.5-Coder-14B-AWQ; too weak, see pilot 01)
+notebooks/kaggle_runner_tpu_server.ipynb   pilot against Qwen3.8-27B served on Kaggle's free TPU v5e-8 (kaggle-tpu-lab)
 tasks/t01_invlite/
     repo/                  starting repository given to the agent (with AGENTS.md)
     task.yaml              constraints, 10 requests, opportunities
@@ -66,7 +67,7 @@ cannot sustain that.
 
 ```bash
 pip install pytest pyyaml
-python -m pytest -q                         # 36 tests (checkers, metric, runner end-to-end with a scripted model)
+python -m pytest -q                         # 37 tests (checkers, metric, runner end-to-end with a scripted model)
 python validation/check_temptations.py      # 5 tempting shortcuts, each caught by the intended checker
 cd tasks/t01_invlite && PYTHONPATH=reference:hidden_tests python -m pytest -q hidden_tests reference/tests
 ```

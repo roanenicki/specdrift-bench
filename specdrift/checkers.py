@@ -126,11 +126,29 @@ def _compatible(old: List[Param], new: List[Param]) -> bool:
     return True
 
 
+def broken_files(repo: Path) -> Set[str]:
+    """Python files that do not parse at all with the running interpreter.
+
+    A broken file is a capability failure, not a constraint violation: its API
+    and its Python-version features cannot be judged, so C1 and C4 skip it and
+    the metric reports it separately."""
+    out = set()
+    for path in iter_py(Path(repo)):
+        try:
+            ast.parse(path.read_text(encoding="utf-8", errors="replace"))
+        except (SyntaxError, ValueError):
+            out.add(rel(Path(repo), path))
+    return out
+
+
 def check_api(repo: Path, baseline: Path, package: str = "invlite") -> Set[str]:
     old_api = public_api(baseline, package)
     new_api = public_api(repo, package)
+    broken = broken_files(repo)
     findings = set()
     for qual, sig in old_api.items():
+        if qual.split(":", 1)[0] in broken:
+            continue  # unknowable while the file does not parse
         if qual not in new_api:
             findings.add(f"api:removed:{qual}")
         elif not _compatible(sig, new_api[qual]):
@@ -338,6 +356,10 @@ def check_py39(repo: Path, baseline: Path, exclude: Iterable[str] = ("legacy",))
     for path in iter_py(repo, exclude=exclude):
         f = rel(repo, path)
         src = path.read_text(encoding="utf-8", errors="replace")
+        try:
+            ast.parse(src)
+        except (SyntaxError, ValueError):
+            continue  # broken for every Python version: reported by broken_files(), not C4
         try:
             ast.parse(src, feature_version=(3, 9))
         except SyntaxError as exc:

@@ -149,6 +149,7 @@ def make_agent(model, workdir: Path, step_limit: int, cmd_timeout: int):
 
 
 def make_model(model_name: str, temperature: float, api_base: str = "", max_tokens: int = 2048, api_key: str = "",
+               extra_body: Optional[dict] = None,
                model_class: str = "litellm_textbased"):
     """`api_base` points LiteLLM to a local OpenAI-compatible server (e.g. vLLM on Kaggle):
     use model names like `hosted_vllm/Qwen/Qwen2.5-Coder-14B-Instruct-AWQ`."""
@@ -161,6 +162,8 @@ def make_model(model_name: str, temperature: float, api_base: str = "", max_toke
         kwargs["api_base"] = api_base
     if api_key:
         kwargs["api_key"] = api_key
+    if extra_body:  # e.g. {"chat_template_kwargs": {"enable_thinking": false}} for Qwen3 models
+        kwargs["extra_body"] = extra_body
     return get_model(model_name, {
         "model_class": model_class,
         "model_kwargs": kwargs,
@@ -304,6 +307,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--api-base", default="", help="URL of an OpenAI-compatible server, e.g. http://localhost:8000/v1")
     ap.add_argument("--api-key-env", default="", help="name of the environment variable holding the server's API key")
     ap.add_argument("--max-tokens", type=int, default=4096, help="max tokens per model reply")
+    ap.add_argument("--extra-body", default="", help='JSON passed to the server, e.g. \'{"chat_template_kwargs": {"enable_thinking": false}}\'')
     ap.add_argument("--step-limit", type=int, default=30, help="max model calls per turn")
     ap.add_argument("--n-turns", type=int, default=0, help="run only the first N requests (0 = all)")
     ap.add_argument("--out", type=Path, default=Path("runs"))
@@ -318,7 +322,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     out = a.out / task["id"] / safe_model / a.condition / f"row{a.order_row:02d}_seed{a.seed}"
     print(f"session -> {out}\norder: {', '.join(order)}")
     res = run_session(a.task, out, lambda: make_model(a.model, a.temperature, a.api_base, a.max_tokens,
-                                                         os.environ.get(a.api_key_env, "") if a.api_key_env else ""), a.condition, order, a.step_limit)
+                                                         os.environ.get(a.api_key_env, "") if a.api_key_env else "",
+                                                         json.loads(a.extra_body) if a.extra_body else None), a.condition, order, a.step_limit)
     print(json.dumps(res["summary"], indent=2))
     return 0
 
